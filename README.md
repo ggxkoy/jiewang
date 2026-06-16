@@ -18,6 +18,8 @@ A lightweight Three.js recreation of [messenger.abeto.co](https://messenger.abet
 - On-screen compass that points toward the current objective NPC
 - Collectible coins scattered across the planet with a saved counter
 - Soft, warm Ghibli-style art direction: gradient sky, fluffy drifting clouds, smooth rolling planet, and soft shadows
+- Rounded blob-foliage trees, scattered wildflower clusters, and petals drifting through the air
+- Gently shimmering, undulating sea rings around the island
 - Day/night cycle with a moving sun, moon, stars, and a warm sunrise/sunset glow along the horizon
 - Procedural ambient music and interaction chimes via the Web Audio API
 - Reset progress, music toggle, day/night toggle, outfit swap, and recenter camera actions

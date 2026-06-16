@@ -200,6 +200,8 @@ const npcDefinitions = [
 ];
 
 const outfitColors = ["#d75d3d", "#2d7ed4", "#38a96b", "#efaa34", "#9b6ce0"];
+const treeFoliageColors = ["#4cae63", "#3f9b59", "#5cb86f", "#69bd6a"];
+const flowerColors = ["#f6738f", "#ffd34d", "#ff9d57", "#f2f2f2", "#b98bff"];
 
 const dom = {
   canvas: document.querySelector("#world"),
@@ -292,6 +294,8 @@ const refs = {
   starField: null,
   clouds: [],
   cloudMaterial: null,
+  petals: null,
+  seaRings: [],
   npcMeshes: new Map(),
   npcLabels: new Map(),
   questSprites: new Map(),
@@ -324,6 +328,8 @@ function init() {
   createProps();
   createCoins();
   createClouds();
+  createFlowers();
+  createPetals();
   bindEvents();
   renderQuestList();
   updateCarriedPackage();
@@ -446,7 +452,9 @@ function createSea() {
     );
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = -13.42 + i * 0.005;
+    ring.userData = { baseOpacity: 0.28, phase: i * 0.7, baseY: ring.position.y };
     scene.add(ring);
+    refs.seaRings.push(ring);
   }
 }
 
@@ -638,6 +646,123 @@ function createClouds() {
   }
 }
 
+function createFlowers() {
+  const clusters = 16;
+  for (let c = 0; c < clusters; c += 1) {
+    const center = new THREE.Vector3(
+      Math.random() * 2 - 1,
+      Math.random() * 2 - 1,
+      Math.random() * 2 - 1
+    );
+    if (center.lengthSq() < 0.05) {
+      continue;
+    }
+    center.normalize();
+    const tangent = new THREE.Vector3(0, 1, 0).cross(center);
+    if (tangent.lengthSq() < 0.001) {
+      tangent.set(1, 0, 0);
+    }
+    tangent.normalize();
+    const bitangent = new THREE.Vector3().crossVectors(center, tangent).normalize();
+
+    const color = flowerColors[Math.floor(Math.random() * flowerColors.length)];
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.7,
+      emissive: color,
+      emissiveIntensity: 0.12
+    });
+    const blooms = 3 + Math.floor(Math.random() * 4);
+    for (let b = 0; b < blooms; b += 1) {
+      const spread = 0.05 + Math.random() * 0.08;
+      const normal = center
+        .clone()
+        .addScaledVector(tangent, (Math.random() - 0.5) * spread)
+        .addScaledVector(bitangent, (Math.random() - 0.5) * spread)
+        .normalize();
+      const flower = new THREE.Group();
+      const stem = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.012, 0.012, 0.16, 5),
+        new THREE.MeshStandardMaterial({ color: "#3f9b59", roughness: 0.9 })
+      );
+      stem.position.y = 0.08;
+      flower.add(stem);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), material);
+      head.position.y = 0.17;
+      flower.add(head);
+      placeCharacterOnPlanet(flower, normal, 0.01);
+      world.add(flower);
+    }
+  }
+}
+
+function createPetals() {
+  const count = 90;
+  const positions = new Float32Array(count * 3);
+  const data = [];
+  for (let i = 0; i < count; i += 1) {
+    const dir = new THREE.Vector3(
+      Math.random() * 2 - 1,
+      Math.random() * 2 - 1,
+      Math.random() * 2 - 1
+    ).normalize();
+    const radius = PLANET_RADIUS + 0.8 + Math.random() * 5;
+    const axis = new THREE.Vector3(
+      Math.random() - 0.5,
+      Math.random() - 0.5,
+      Math.random() - 0.5
+    ).normalize();
+    data.push({
+      dir,
+      radius,
+      axis,
+      speed: 0.05 + Math.random() * 0.12,
+      bob: Math.random() * Math.PI * 2,
+      bobSpeed: 0.6 + Math.random() * 0.8
+    });
+    const p = dir.clone().multiplyScalar(radius);
+    positions[i * 3] = p.x;
+    positions[i * 3 + 1] = p.y;
+    positions[i * 3 + 2] = p.z;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const points = new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      map: makeSoftDiscTexture("#ffd7e4"),
+      color: "#ffe2ec",
+      size: 0.28,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false
+    })
+  );
+  points.userData = { data };
+  world.add(points);
+  refs.petals = points;
+}
+
+function makeSoftDiscTexture(color) {
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, color);
+  gradient.addColorStop(0.5, color);
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+  ctx.fill();
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 function createNpcSet() {
   npcDefinitions.forEach((npc) => {
     const normal = vectorFromArray(npc.position).normalize();
@@ -746,21 +871,43 @@ function createProps() {
 function createTree(normal) {
   const tree = new THREE.Group();
   const trunk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.08, 0.11, 0.55, 7),
-    new THREE.MeshStandardMaterial({ color: "#855b36", roughness: 0.8 })
+    new THREE.CylinderGeometry(0.1, 0.14, 0.5, 8),
+    new THREE.MeshStandardMaterial({ color: "#9b6a3f", roughness: 0.85 })
   );
-  trunk.position.y = 0.28;
+  trunk.position.y = 0.25;
   trunk.castShadow = true;
   tree.add(trunk);
 
-  const crown = new THREE.Mesh(
-    new THREE.ConeGeometry(0.36, 0.82, 8),
-    new THREE.MeshStandardMaterial({ color: "#2f8d57", roughness: 0.86, flatShading: true })
-  );
-  crown.position.y = 0.88;
-  crown.castShadow = true;
-  tree.add(crown);
+  // Soft, rounded canopy built from a few overlapping spheres (Ghibli blob foliage).
+  const foliageColor = treeFoliageColors[Math.floor(Math.random() * treeFoliageColors.length)];
+  const foliageMaterial = new THREE.MeshStandardMaterial({
+    color: foliageColor,
+    roughness: 0.92,
+    metalness: 0,
+    flatShading: false
+  });
+  const blobCount = 3 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < blobCount; i += 1) {
+    const radius = 0.32 + Math.random() * 0.16;
+    const blob = new THREE.Mesh(new THREE.SphereGeometry(radius, 14, 12), foliageMaterial);
+    const angle = (i / blobCount) * Math.PI * 2;
+    blob.position.set(
+      Math.cos(angle) * 0.18,
+      0.66 + Math.random() * 0.22,
+      Math.sin(angle) * 0.18
+    );
+    blob.scale.y = 1.05;
+    blob.castShadow = true;
+    tree.add(blob);
+  }
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 12), foliageMaterial);
+  cap.position.y = 0.96;
+  cap.castShadow = true;
+  tree.add(cap);
+
+  tree.scale.setScalar(0.85 + Math.random() * 0.5);
   placeCharacterOnPlanet(tree, normal, 0.02);
+  tree.rotateY(Math.random() * Math.PI * 2);
   world.add(tree);
 }
 
@@ -1043,6 +1190,27 @@ function animateWorld(dt) {
   }
   refs.clouds.forEach((cloud) => {
     cloud.position.applyAxisAngle(cloud.userData.axis, cloud.userData.speed * dt);
+  });
+
+  if (refs.petals) {
+    const seconds = performance.now() * 0.001;
+    const array = refs.petals.geometry.attributes.position.array;
+    refs.petals.userData.data.forEach((petal, i) => {
+      petal.dir.applyAxisAngle(petal.axis, petal.speed * dt).normalize();
+      const wobble = Math.sin(seconds * petal.bobSpeed + petal.bob) * 0.45;
+      const r = petal.radius + wobble;
+      array[i * 3] = petal.dir.x * r;
+      array[i * 3 + 1] = petal.dir.y * r;
+      array[i * 3 + 2] = petal.dir.z * r;
+    });
+    refs.petals.geometry.attributes.position.needsUpdate = true;
+  }
+
+  const seaTime = performance.now() * 0.001;
+  refs.seaRings.forEach((ring) => {
+    const wave = Math.sin(seaTime * 0.8 + ring.userData.phase);
+    ring.material.opacity = ring.userData.baseOpacity + wave * 0.16;
+    ring.position.y = ring.userData.baseY + wave * 0.06;
   });
 }
 
