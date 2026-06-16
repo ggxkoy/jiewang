@@ -13,26 +13,32 @@ const DAY_LENGTH = 90; // seconds for a full day/night cycle
 
 const skyPalette = {
   day: {
-    sky: new THREE.Color("#73d5e4"),
-    sea: new THREE.Color("#40bfcf"),
-    fog: new THREE.Color("#73d5e4"),
-    hemiSky: new THREE.Color("#f8f2d5"),
-    hemiGround: new THREE.Color("#31768a"),
-    keyColor: new THREE.Color("#fff7d8"),
-    keyIntensity: 2.4,
-    hemiIntensity: 1.8
+    zenith: new THREE.Color("#7ec8ee"),
+    horizon: new THREE.Color("#fdf2d4"),
+    sea: new THREE.Color("#6fcdd6"),
+    fog: new THREE.Color("#dff0e6"),
+    hemiSky: new THREE.Color("#fbf4dc"),
+    hemiGround: new THREE.Color("#8fb98f"),
+    keyColor: new THREE.Color("#fff3cf"),
+    cloud: new THREE.Color("#fffdf7"),
+    keyIntensity: 2.2,
+    hemiIntensity: 2.1
   },
   night: {
-    sky: new THREE.Color("#0d1b3a"),
-    sea: new THREE.Color("#13284d"),
-    fog: new THREE.Color("#10204a"),
-    hemiSky: new THREE.Color("#2a3a6b"),
-    hemiGround: new THREE.Color("#0a1530"),
-    keyColor: new THREE.Color("#acc4ff"),
-    keyIntensity: 0.5,
-    hemiIntensity: 0.55
+    zenith: new THREE.Color("#0b1430"),
+    horizon: new THREE.Color("#2b3f6b"),
+    sea: new THREE.Color("#16294d"),
+    fog: new THREE.Color("#1c2c50"),
+    hemiSky: new THREE.Color("#33457a"),
+    hemiGround: new THREE.Color("#101c3a"),
+    keyColor: new THREE.Color("#b7c8ff"),
+    cloud: new THREE.Color("#4a5784"),
+    keyIntensity: 0.45,
+    hemiIntensity: 0.7
   }
 };
+// Warm tint that blooms along the horizon at sunrise and sunset.
+const duskGlow = new THREE.Color("#f7a85a");
 
 const questDefinitions = [
   {
@@ -230,7 +236,9 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color("#73d5e4");
@@ -266,7 +274,7 @@ const state = {
   titleOrbit: 0,
   lastPromptNpc: null,
   coins: Number(localStorage.getItem(COIN_KEY) || 0),
-  dayTime: 0.18,
+  dayTime: 0.42,
   carryingPackage: false
 };
 
@@ -282,10 +290,18 @@ const refs = {
   sun: null,
   moon: null,
   starField: null,
+  clouds: [],
+  cloudMaterial: null,
   npcMeshes: new Map(),
   npcLabels: new Map(),
   questSprites: new Map(),
   coins: []
+};
+
+const skyBackdrop = {
+  canvas: null,
+  ctx: null,
+  texture: null
 };
 
 const audio = {
@@ -307,6 +323,7 @@ function init() {
   createNpcSet();
   createProps();
   createCoins();
+  createClouds();
   bindEvents();
   renderQuestList();
   updateCarriedPackage();
@@ -341,16 +358,39 @@ function createLights() {
 }
 
 function createSky() {
+  // Soft painted gradient backdrop (zenith -> horizon), redrawn on day/night change.
+  skyBackdrop.canvas = document.createElement("canvas");
+  skyBackdrop.canvas.width = 16;
+  skyBackdrop.canvas.height = 256;
+  skyBackdrop.ctx = skyBackdrop.canvas.getContext("2d");
+  skyBackdrop.texture = new THREE.CanvasTexture(skyBackdrop.canvas);
+  skyBackdrop.texture.colorSpace = THREE.SRGBColorSpace;
+  scene.background = skyBackdrop.texture;
+
   const sun = new THREE.Mesh(
-    new THREE.SphereGeometry(2.4, 24, 16),
-    new THREE.MeshBasicMaterial({ color: "#fff1a8" })
+    new THREE.SphereGeometry(2.6, 24, 16),
+    new THREE.MeshBasicMaterial({ color: "#fff4c4", toneMapped: false, fog: false })
   );
   scene.add(sun);
   refs.sun = sun;
 
+  // Soft halo around the sun for a hazy, hand-painted glow.
+  const sunHalo = new THREE.Mesh(
+    new THREE.SphereGeometry(4.6, 24, 16),
+    new THREE.MeshBasicMaterial({
+      color: "#fff0b0",
+      transparent: true,
+      opacity: 0.28,
+      toneMapped: false,
+      fog: false,
+      depthWrite: false
+    })
+  );
+  sun.add(sunHalo);
+
   const moon = new THREE.Mesh(
-    new THREE.SphereGeometry(1.8, 24, 16),
-    new THREE.MeshBasicMaterial({ color: "#e9eeff" })
+    new THREE.SphereGeometry(1.9, 24, 16),
+    new THREE.MeshBasicMaterial({ color: "#eef2ff", toneMapped: false, fog: false })
   );
   scene.add(moon);
   refs.moon = moon;
@@ -412,11 +452,12 @@ function createSea() {
 
 function createPlanet() {
   const planet = new THREE.Mesh(
-    new THREE.SphereGeometry(PLANET_RADIUS, 56, 36),
+    new THREE.SphereGeometry(PLANET_RADIUS, 64, 48),
     new THREE.MeshStandardMaterial({
-      color: "#53b96a",
-      roughness: 0.92,
-      flatShading: true
+      color: "#83c56c",
+      roughness: 0.96,
+      metalness: 0,
+      flatShading: false
     })
   );
   planet.castShadow = true;
@@ -547,6 +588,53 @@ function createCoins() {
     world.add(coin);
     refs.coins.push(coin);
     placed += 1;
+  }
+}
+
+function createClouds() {
+  const cloudMaterial = new THREE.MeshStandardMaterial({
+    color: skyPalette.day.cloud,
+    roughness: 1,
+    metalness: 0,
+    emissive: "#ffffff",
+    emissiveIntensity: 0.08,
+    flatShading: false
+  });
+  refs.cloudMaterial = cloudMaterial;
+
+  const cloudCount = 11;
+  for (let i = 0; i < cloudCount; i += 1) {
+    const cluster = new THREE.Group();
+    const puffs = 4 + Math.floor(Math.random() * 3);
+    for (let p = 0; p < puffs; p += 1) {
+      const radius = 0.85 + Math.random() * 0.9;
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(radius, 14, 12), cloudMaterial);
+      puff.position.set(
+        (p - puffs / 2) * 1.1 + (Math.random() - 0.5) * 0.5,
+        (Math.random() - 0.5) * 0.5,
+        (Math.random() - 0.5) * 0.7
+      );
+      puff.scale.y = 0.7;
+      cluster.add(puff);
+    }
+
+    // Orbit each cloud around its own tilted axis so the sky stays gently alive.
+    const axis = new THREE.Vector3(
+      Math.random() - 0.5,
+      0.7 + Math.random() * 0.4,
+      Math.random() - 0.5
+    ).normalize();
+    const start = new THREE.Vector3(
+      Math.random() * 2 - 1,
+      Math.random() * 1.1 - 0.15,
+      Math.random() * 2 - 1
+    ).normalize();
+    const orbitRadius = 15 + Math.random() * 6;
+    cluster.position.copy(start).multiplyScalar(orbitRadius);
+    cluster.scale.setScalar(0.9 + Math.random() * 0.8);
+    cluster.userData = { axis, speed: 0.02 + Math.random() * 0.03 };
+    world.add(cluster);
+    refs.clouds.push(cluster);
   }
 }
 
@@ -953,6 +1041,9 @@ function animateWorld(dt) {
   if (refs.carriedPackage && refs.carriedPackage.visible) {
     refs.carriedPackage.rotation.y += dt * 1.4;
   }
+  refs.clouds.forEach((cloud) => {
+    cloud.position.applyAxisAngle(cloud.userData.axis, cloud.userData.speed * dt);
+  });
 }
 
 function interactWithNearest() {
@@ -1024,7 +1115,7 @@ function closeDialogue() {
 }
 
 function applyDayNight(time) {
-  // time in [0,1): 0 = sunrise, 0.25 = noon, 0.5 = sunset, 0.75 = midnight.
+  // time in [0,1): 0 = midnight, 0.25 = sunrise, 0.5 = noon, 0.75 = sunset.
   const sunAngle = time * Math.PI * 2 - Math.PI / 2;
   const sunHeight = Math.sin(sunAngle);
   const orbit = 70;
@@ -1034,20 +1125,30 @@ function applyDayNight(time) {
 
   // Daylight factor: 1 fully day, 0 fully night, with smooth dusk/dawn band.
   const daylight = THREE.MathUtils.clamp((sunHeight + 0.18) / 0.5, 0, 1);
+  const night = 1 - daylight;
+  // Warm horizon bloom that peaks while the sun hugs the horizon.
+  const glow = THREE.MathUtils.clamp(1 - Math.abs(sunHeight) / 0.32, 0, 1);
 
-  const sky = skyPalette.day.sky.clone().lerp(skyPalette.night.sky, 1 - daylight);
-  const fog = skyPalette.day.fog.clone().lerp(skyPalette.night.fog, 1 - daylight);
-  const sea = skyPalette.day.sea.clone().lerp(skyPalette.night.sea, 1 - daylight);
-  scene.background.copy(sky);
+  const zenith = skyPalette.day.zenith.clone().lerp(skyPalette.night.zenith, night);
+  const horizon = skyPalette.day.horizon
+    .clone()
+    .lerp(skyPalette.night.horizon, night)
+    .lerp(duskGlow, glow * 0.6);
+  const fog = skyPalette.day.fog.clone().lerp(skyPalette.night.fog, night).lerp(duskGlow, glow * 0.35);
+  const sea = skyPalette.day.sea.clone().lerp(skyPalette.night.sea, night);
+  drawSkyBackdrop(zenith, horizon);
   scene.fog.color.copy(fog);
   if (refs.sea) {
     refs.sea.material.color.copy(sea);
   }
+  if (refs.cloudMaterial) {
+    refs.cloudMaterial.color.copy(skyPalette.day.cloud.clone().lerp(skyPalette.night.cloud, night).lerp(duskGlow, glow * 0.4));
+  }
 
   if (refs.hemiLight) {
-    refs.hemiLight.color.copy(skyPalette.day.hemiSky.clone().lerp(skyPalette.night.hemiSky, 1 - daylight));
+    refs.hemiLight.color.copy(skyPalette.day.hemiSky.clone().lerp(skyPalette.night.hemiSky, night));
     refs.hemiLight.groundColor.copy(
-      skyPalette.day.hemiGround.clone().lerp(skyPalette.night.hemiGround, 1 - daylight)
+      skyPalette.day.hemiGround.clone().lerp(skyPalette.night.hemiGround, night)
     );
     refs.hemiLight.intensity = THREE.MathUtils.lerp(
       skyPalette.night.hemiIntensity,
@@ -1057,7 +1158,9 @@ function applyDayNight(time) {
   }
   if (refs.keyLight) {
     refs.keyLight.position.copy(sunPos).multiplyScalar(0.4);
-    refs.keyLight.color.copy(skyPalette.day.keyColor.clone().lerp(skyPalette.night.keyColor, 1 - daylight));
+    refs.keyLight.color
+      .copy(skyPalette.day.keyColor.clone().lerp(skyPalette.night.keyColor, night))
+      .lerp(duskGlow, glow * 0.5);
     refs.keyLight.intensity = THREE.MathUtils.lerp(
       skyPalette.night.keyIntensity,
       skyPalette.day.keyIntensity,
@@ -1085,6 +1188,23 @@ function labelForTime(daylight, sunHeight) {
   if (daylight > 0.85) return "白天";
   if (daylight < 0.15) return "夜晚";
   return sunHeight >= 0 ? "黄昏" : "黎明";
+}
+
+function drawSkyBackdrop(zenith, horizon) {
+  const ctx = skyBackdrop.ctx;
+  if (!ctx) {
+    return;
+  }
+  const h = skyBackdrop.canvas.height;
+  const gradient = ctx.createLinearGradient(0, 0, 0, h);
+  const mid = zenith.clone().lerp(horizon, 0.55);
+  gradient.addColorStop(0, `#${zenith.getHexString()}`);
+  gradient.addColorStop(0.55, `#${mid.getHexString()}`);
+  gradient.addColorStop(0.86, `#${horizon.getHexString()}`);
+  gradient.addColorStop(1, `#${horizon.getHexString()}`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, skyBackdrop.canvas.width, h);
+  skyBackdrop.texture.needsUpdate = true;
 }
 
 function collectCoins() {

@@ -17,7 +17,8 @@ A lightweight Three.js recreation of [messenger.abeto.co](https://messenger.abet
 - Visible parcel the character carries while a delivery is in progress
 - On-screen compass that points toward the current objective NPC
 - Collectible coins scattered across the planet with a saved counter
-- Day/night cycle with a moving sun, moon, stars, and shifting sky colors
+- Soft, warm Ghibli-style art direction: gradient sky, fluffy drifting clouds, smooth rolling planet, and soft shadows
+- Day/night cycle with a moving sun, moon, stars, and a warm sunrise/sunset glow along the horizon
 - Procedural ambient music and interaction chimes via the Web Audio API
 - Reset progress, music toggle, day/night toggle, outfit swap, and recenter camera actions
 
