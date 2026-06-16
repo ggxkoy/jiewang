@@ -133,6 +133,69 @@ button {
   pointer-events: none;
 }
 
+.status-bar {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.status-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 2px solid var(--panel-border);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  font-size: 15px;
+  font-weight: 900;
+  backdrop-filter: blur(10px);
+}
+
+.status-icon {
+  font-size: 16px;
+  color: var(--yellow-dark);
+}
+
+#time-icon {
+  color: #e0902a;
+}
+
+.compass {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+
+.compass-arrow {
+  font-size: 30px;
+  font-weight: 900;
+  color: var(--yellow);
+  text-shadow: 0 2px 0 var(--yellow-dark), 0 4px 10px rgba(27, 54, 64, 0.5);
+  transform-origin: center;
+}
+
+.compass-label {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(29, 40, 48, 0.72);
+  color: #fff7d9;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .quest-panel {
   position: fixed;
   top: 18px;
@@ -391,10 +454,21 @@ button {
 
 @media (max-width: 860px) {
   .quest-panel {
-    top: 12px;
+    top: 58px;
     right: 12px;
     width: min(320px, calc(100vw - 24px));
-    max-height: 46vh;
+    max-height: 40vh;
+  }
+
+  .status-bar {
+    top: 12px;
+    left: 12px;
+    gap: 6px;
+  }
+
+  .status-chip {
+    padding: 6px 9px;
+    font-size: 13px;
   }
 
   .game-title {

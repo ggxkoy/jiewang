@@ -14,7 +14,12 @@ A lightweight Three.js recreation of [messenger.abeto.co](https://messenger.abet
 - Desktop and mobile controls
 - Quest HUD in the top-right corner
 - NPC interaction and multi-step delivery quests
-- Reset progress, outfit swap, and recenter camera actions
+- Visible parcel the character carries while a delivery is in progress
+- On-screen compass that points toward the current objective NPC
+- Collectible coins scattered across the planet with a saved counter
+- Day/night cycle with a moving sun, moon, stars, and shifting sky colors
+- Procedural ambient music and interaction chimes via the Web Audio API
+- Reset progress, music toggle, day/night toggle, outfit swap, and recenter camera actions
 
 ## Controls
 
@@ -22,6 +27,7 @@ A lightweight Three.js recreation of [messenger.abeto.co](https://messenger.abet
 - `Shift`: sprint
 - `Space`: jump
 - `E`: talk to the nearest NPC
+- Walk over a coin to collect it automatically
 
 ## Local development
 
@@ -52,5 +58,6 @@ http://localhost:3000
 ## Notes
 
 - The project intentionally replaces original art with primitive geometry.
-- Quest progress is stored in `localStorage`.
+- Quest progress and collected coins are stored in `localStorage`.
+- Ambient music is generated procedurally at runtime, so no audio asset files are bundled.
 - The current build is a static local web app with no backend save service.

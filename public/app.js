@@ -5,7 +5,34 @@ const PLAYER_OFFSET = 0.75;
 const NPC_OFFSET = 0.65;
 const SAVE_KEY = "messenger-geometry-clone-progress";
 const OUTFIT_KEY = "messenger-geometry-clone-outfit";
+const COIN_KEY = "messenger-geometry-clone-coins";
 const UP = new THREE.Vector3(0, 1, 0);
+const COIN_COUNT = 14;
+const COIN_PICKUP_DISTANCE = 1.1;
+const DAY_LENGTH = 90; // seconds for a full day/night cycle
+
+const skyPalette = {
+  day: {
+    sky: new THREE.Color("#73d5e4"),
+    sea: new THREE.Color("#40bfcf"),
+    fog: new THREE.Color("#73d5e4"),
+    hemiSky: new THREE.Color("#f8f2d5"),
+    hemiGround: new THREE.Color("#31768a"),
+    keyColor: new THREE.Color("#fff7d8"),
+    keyIntensity: 2.4,
+    hemiIntensity: 1.8
+  },
+  night: {
+    sky: new THREE.Color("#0d1b3a"),
+    sea: new THREE.Color("#13284d"),
+    fog: new THREE.Color("#10204a"),
+    hemiSky: new THREE.Color("#2a3a6b"),
+    hemiGround: new THREE.Color("#0a1530"),
+    keyColor: new THREE.Color("#acc4ff"),
+    keyIntensity: 0.5,
+    hemiIntensity: 0.55
+  }
+};
 
 const questDefinitions = [
   {
@@ -182,8 +209,16 @@ const dom = {
   dialogueClose: document.querySelector("#dialogue-close"),
   resetProgress: document.querySelector("#reset-progress"),
   musicToggle: document.querySelector("#music-toggle"),
+  timeToggle: document.querySelector("#time-toggle"),
   outfitToggle: document.querySelector("#outfit-toggle"),
   focusPlayer: document.querySelector("#focus-player"),
+  coinCount: document.querySelector("#coin-count"),
+  timeIcon: document.querySelector("#time-icon"),
+  timeLabel: document.querySelector("#time-label"),
+  questProgress: document.querySelector("#quest-progress"),
+  compass: document.querySelector("#compass"),
+  compassArrow: document.querySelector("#compass-arrow"),
+  compassLabel: document.querySelector("#compass-label"),
   touchButtons: [...document.querySelectorAll("[data-touch-key]")]
 };
 
@@ -229,30 +264,54 @@ const state = {
   jumpVelocity: 0,
   jumpHeight: 0,
   titleOrbit: 0,
-  lastPromptNpc: null
+  lastPromptNpc: null,
+  coins: Number(localStorage.getItem(COIN_KEY) || 0),
+  dayTime: 0.18,
+  carryingPackage: false
 };
 
 const refs = {
   planet: null,
   player: null,
   playerBody: null,
+  carriedPackage: null,
+  hemiLight: null,
+  keyLight: null,
+  rimLight: null,
+  sea: null,
+  sun: null,
+  moon: null,
+  starField: null,
   npcMeshes: new Map(),
   npcLabels: new Map(),
-  questSprites: new Map()
+  questSprites: new Map(),
+  coins: []
+};
+
+const audio = {
+  ctx: null,
+  master: null,
+  timer: null,
+  step: 0
 };
 
 init();
 
 function init() {
   createLights();
+  createSky();
   createSea();
   createPlanet();
   createPlayer();
   resetCameraHeading(true);
   createNpcSet();
   createProps();
+  createCoins();
   bindEvents();
   renderQuestList();
+  updateCarriedPackage();
+  updateCoinDisplay();
+  applyDayNight(state.dayTime);
   resize();
   renderer.setAnimationLoop(tick);
 }
@@ -260,6 +319,7 @@ function init() {
 function createLights() {
   const hemi = new THREE.HemisphereLight("#f8f2d5", "#31768a", 1.8);
   scene.add(hemi);
+  refs.hemiLight = hemi;
 
   const key = new THREE.DirectionalLight("#fff7d8", 2.4);
   key.position.set(16, 22, 12);
@@ -272,10 +332,56 @@ function createLights() {
   key.shadow.camera.top = 18;
   key.shadow.camera.bottom = -18;
   scene.add(key);
+  refs.keyLight = key;
 
   const rim = new THREE.DirectionalLight("#6ef0ff", 0.8);
   rim.position.set(-18, 8, -10);
   scene.add(rim);
+  refs.rimLight = rim;
+}
+
+function createSky() {
+  const sun = new THREE.Mesh(
+    new THREE.SphereGeometry(2.4, 24, 16),
+    new THREE.MeshBasicMaterial({ color: "#fff1a8" })
+  );
+  scene.add(sun);
+  refs.sun = sun;
+
+  const moon = new THREE.Mesh(
+    new THREE.SphereGeometry(1.8, 24, 16),
+    new THREE.MeshBasicMaterial({ color: "#e9eeff" })
+  );
+  scene.add(moon);
+  refs.moon = moon;
+
+  const starCount = 420;
+  const positions = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i += 1) {
+    const dir = new THREE.Vector3(
+      Math.random() * 2 - 1,
+      Math.random() * 2 - 1,
+      Math.random() * 2 - 1
+    ).normalize().multiplyScalar(95 + Math.random() * 20);
+    positions[i * 3] = dir.x;
+    positions[i * 3 + 1] = dir.y;
+    positions[i * 3 + 2] = dir.z;
+  }
+  const starGeometry = new THREE.BufferGeometry();
+  starGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const stars = new THREE.Points(
+    starGeometry,
+    new THREE.PointsMaterial({
+      color: "#ffffff",
+      size: 0.9,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false
+    })
+  );
+  scene.add(stars);
+  refs.starField = stars;
 }
 
 function createSea() {
@@ -291,6 +397,7 @@ function createSea() {
   sea.position.y = -13.5;
   sea.receiveShadow = true;
   scene.add(sea);
+  refs.sea = sea;
 
   for (let i = 0; i < 9; i += 1) {
     const ring = new THREE.Mesh(
@@ -379,9 +486,68 @@ function createPlayer() {
   headset.rotation.z = Math.PI;
   group.add(headset);
 
+  const carried = new THREE.Group();
+  const parcel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.34, 0.34, 0.34),
+    new THREE.MeshStandardMaterial({ color: "#d8a85a", roughness: 0.75 })
+  );
+  parcel.castShadow = true;
+  carried.add(parcel);
+  const ribbon = new THREE.Mesh(
+    new THREE.BoxGeometry(0.36, 0.06, 0.36),
+    new THREE.MeshStandardMaterial({ color: "#c44f3a", roughness: 0.6 })
+  );
+  carried.add(ribbon);
+  carried.position.set(0, 0.78, -0.42);
+  carried.visible = false;
+  group.add(carried);
+  refs.carriedPackage = carried;
+
   refs.player = group;
   world.add(group);
   placeCharacterOnPlanet(group, state.playerNormal, PLAYER_OFFSET, state.playerForward);
+}
+
+function createCoins() {
+  let placed = 0;
+  let guard = 0;
+  while (placed < COIN_COUNT && guard < 400) {
+    guard += 1;
+    const normal = new THREE.Vector3(
+      Math.random() * 2 - 1,
+      Math.random() * 2 - 1,
+      Math.random() * 2 - 1
+    );
+    if (normal.lengthSq() < 0.05) {
+      continue;
+    }
+    normal.normalize();
+
+    const tooCloseToNpc = npcDefinitions.some(
+      (npc) => normal.angleTo(npc.normal) * PLANET_RADIUS < 1.6
+    );
+    if (tooCloseToNpc) {
+      continue;
+    }
+
+    const coin = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.22, 0.06, 18),
+      new THREE.MeshStandardMaterial({
+        color: "#ffd341",
+        roughness: 0.35,
+        metalness: 0.55,
+        emissive: "#7a5400",
+        emissiveIntensity: 0.35
+      })
+    );
+    coin.castShadow = true;
+    placeCharacterOnPlanet(coin, normal, 0.55);
+    coin.rotateX(Math.PI / 2);
+    coin.userData = { normal, spin: Math.random() * Math.PI * 2, collected: false };
+    world.add(coin);
+    refs.coins.push(coin);
+    placed += 1;
+  }
 }
 
 function createNpcSet() {
@@ -518,6 +684,7 @@ function bindEvents() {
     saveProgress();
     updateQuestMarkers();
     renderQuestList();
+    updateCarriedPackage();
     showDialogue({
       name: "系统",
       role: "任务重置",
@@ -528,6 +695,16 @@ function bindEvents() {
     state.musicOn = !state.musicOn;
     dom.musicToggle.classList.toggle("is-active", state.musicOn);
     dom.musicToggle.title = state.musicOn ? "音乐：开" : "音乐：关";
+    if (state.musicOn) {
+      startMusic();
+    } else {
+      stopMusic();
+    }
+  });
+  dom.timeToggle.addEventListener("click", () => {
+    // Jump to the opposite half of the day/night cycle.
+    state.dayTime = (state.dayTime + 0.5) % 1;
+    applyDayNight(state.dayTime);
   });
   dom.outfitToggle.addEventListener("click", () => {
     state.outfitIndex = (state.outfitIndex + 1) % outfitColors.length;
@@ -659,12 +836,18 @@ function tick() {
   const now = performance.now();
   const dt = Math.min((now - lastFrameTime) / 1000, 0.04);
   lastFrameTime = now;
+
+  state.dayTime = (state.dayTime + dt / DAY_LENGTH) % 1;
+  applyDayNight(state.dayTime);
+
   if (state.mode === "title") {
     updateTitleCamera(dt);
   } else {
     updatePlayer(dt);
     updateCamera(dt);
     updateNpcPrompt();
+    collectCoins();
+    updateCompass();
   }
   animateWorld(dt);
   renderer.render(scene, camera);
@@ -757,6 +940,19 @@ function animateWorld(dt) {
   refs.npcLabels.forEach((label) => {
     label.quaternion.copy(camera.quaternion);
   });
+  const t = performance.now() * 0.003;
+  refs.coins.forEach((coin) => {
+    if (coin.userData.collected) {
+      return;
+    }
+    const bob = 0.55 + Math.sin(t + coin.userData.spin) * 0.08;
+    placeCharacterOnPlanet(coin, coin.userData.normal, bob);
+    coin.rotateX(Math.PI / 2);
+    coin.rotateZ(t + coin.userData.spin);
+  });
+  if (refs.carriedPackage && refs.carriedPackage.visible) {
+    refs.carriedPackage.rotation.y += dt * 1.4;
+  }
 }
 
 function interactWithNearest() {
@@ -797,8 +993,13 @@ function interactWithNpc(npc) {
   saveProgress();
   updateQuestMarkers();
   renderQuestList();
+  updateCarriedPackage();
+  playChime(660);
 
   const isQuestDone = state.progress[quest.id].every(Boolean);
+  if (isQuestDone) {
+    playChime(880);
+  }
   const text =
     npc.success[Math.min(stepIndex, npc.success.length - 1)] ||
     `步骤完成：${currentStep.text}。`;
@@ -822,6 +1023,214 @@ function closeDialogue() {
   dom.dialogue.classList.add("is-hidden");
 }
 
+function applyDayNight(time) {
+  // time in [0,1): 0 = sunrise, 0.25 = noon, 0.5 = sunset, 0.75 = midnight.
+  const sunAngle = time * Math.PI * 2 - Math.PI / 2;
+  const sunHeight = Math.sin(sunAngle);
+  const orbit = 70;
+  const sunPos = new THREE.Vector3(Math.cos(sunAngle) * orbit, sunHeight * orbit, 18);
+  refs.sun.position.copy(sunPos);
+  refs.moon.position.copy(sunPos).multiplyScalar(-1);
+
+  // Daylight factor: 1 fully day, 0 fully night, with smooth dusk/dawn band.
+  const daylight = THREE.MathUtils.clamp((sunHeight + 0.18) / 0.5, 0, 1);
+
+  const sky = skyPalette.day.sky.clone().lerp(skyPalette.night.sky, 1 - daylight);
+  const fog = skyPalette.day.fog.clone().lerp(skyPalette.night.fog, 1 - daylight);
+  const sea = skyPalette.day.sea.clone().lerp(skyPalette.night.sea, 1 - daylight);
+  scene.background.copy(sky);
+  scene.fog.color.copy(fog);
+  if (refs.sea) {
+    refs.sea.material.color.copy(sea);
+  }
+
+  if (refs.hemiLight) {
+    refs.hemiLight.color.copy(skyPalette.day.hemiSky.clone().lerp(skyPalette.night.hemiSky, 1 - daylight));
+    refs.hemiLight.groundColor.copy(
+      skyPalette.day.hemiGround.clone().lerp(skyPalette.night.hemiGround, 1 - daylight)
+    );
+    refs.hemiLight.intensity = THREE.MathUtils.lerp(
+      skyPalette.night.hemiIntensity,
+      skyPalette.day.hemiIntensity,
+      daylight
+    );
+  }
+  if (refs.keyLight) {
+    refs.keyLight.position.copy(sunPos).multiplyScalar(0.4);
+    refs.keyLight.color.copy(skyPalette.day.keyColor.clone().lerp(skyPalette.night.keyColor, 1 - daylight));
+    refs.keyLight.intensity = THREE.MathUtils.lerp(
+      skyPalette.night.keyIntensity,
+      skyPalette.day.keyIntensity,
+      daylight
+    );
+  }
+
+  refs.sun.visible = sunHeight > -0.25;
+  refs.moon.visible = sunHeight < 0.25;
+  if (refs.starField) {
+    refs.starField.material.opacity = THREE.MathUtils.clamp(1 - daylight * 1.4, 0, 0.9);
+  }
+
+  const isNight = daylight < 0.4;
+  if (dom.timeIcon) {
+    dom.timeIcon.textContent = isNight ? "☾" : "☀";
+    dom.timeIcon.style.color = isNight ? "#bcd0ff" : "#e0902a";
+  }
+  if (dom.timeLabel) {
+    dom.timeLabel.textContent = labelForTime(daylight, sunHeight);
+  }
+}
+
+function labelForTime(daylight, sunHeight) {
+  if (daylight > 0.85) return "白天";
+  if (daylight < 0.15) return "夜晚";
+  return sunHeight >= 0 ? "黄昏" : "黎明";
+}
+
+function collectCoins() {
+  refs.coins.forEach((coin) => {
+    if (coin.userData.collected) {
+      return;
+    }
+    const surfaceDistance = state.playerNormal.angleTo(coin.userData.normal) * PLANET_RADIUS;
+    if (surfaceDistance <= COIN_PICKUP_DISTANCE) {
+      coin.userData.collected = true;
+      coin.visible = false;
+      state.coins += 1;
+      localStorage.setItem(COIN_KEY, String(state.coins));
+      updateCoinDisplay();
+      playChime(540);
+    }
+  });
+}
+
+function updateCoinDisplay() {
+  if (dom.coinCount) {
+    dom.coinCount.textContent = String(state.coins);
+  }
+}
+
+function updateCarriedPackage() {
+  const carrying = questDefinitions.some((quest) => {
+    const index = getCurrentStepIndex(quest.id);
+    return index > 0 && index < quest.steps.length;
+  });
+  state.carryingPackage = carrying;
+  if (refs.carriedPackage) {
+    refs.carriedPackage.visible = carrying;
+  }
+}
+
+function getCurrentObjectiveNpc() {
+  for (const quest of questDefinitions) {
+    const index = getCurrentStepIndex(quest.id);
+    const step = quest.steps[index];
+    if (step) {
+      return npcDefinitions.find((npc) => npc.id === step.npc) || null;
+    }
+  }
+  return null;
+}
+
+function updateCompass() {
+  const objective = getCurrentObjectiveNpc();
+  if (!objective || (state.nearNpc && state.nearNpc.id === objective.id)) {
+    dom.compass.classList.add("is-hidden");
+    return;
+  }
+
+  // Project the direction to the objective onto the camera-facing plane to get a screen angle.
+  const toObjective = objective.normal
+    .clone()
+    .multiplyScalar(PLANET_RADIUS + NPC_OFFSET)
+    .applyMatrix4(world.matrixWorld);
+  const screenPos = toObjective.clone().project(camera);
+  const angle = Math.atan2(screenPos.y, screenPos.x);
+  const behind = screenPos.z > 1;
+
+  dom.compass.classList.remove("is-hidden");
+  // Arrow glyph points right by default; rotate to face the objective on screen.
+  dom.compassArrow.style.transform = `rotate(${-angle}rad)`;
+  const surfaceDistance = Math.round(state.playerNormal.angleTo(objective.normal) * PLANET_RADIUS);
+  dom.compassLabel.textContent = behind
+    ? `${objective.name} · 在身后`
+    : `${objective.name} · ${surfaceDistance}m`;
+}
+
+function ensureAudio() {
+  if (audio.ctx) {
+    return;
+  }
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) {
+    return;
+  }
+  audio.ctx = new AudioCtx();
+  audio.master = audio.ctx.createGain();
+  audio.master.gain.value = 0.12;
+  audio.master.connect(audio.ctx.destination);
+}
+
+function startMusic() {
+  ensureAudio();
+  if (!audio.ctx) {
+    return;
+  }
+  if (audio.ctx.state === "suspended") {
+    audio.ctx.resume();
+  }
+  if (audio.timer) {
+    return;
+  }
+  // A gentle pentatonic loop generated procedurally — no asset files needed.
+  const scale = [220, 247, 277, 330, 370, 440, 494];
+  const pattern = [0, 2, 4, 2, 3, 1, 4, 5];
+  audio.step = 0;
+  const playNext = () => {
+    const freq = scale[pattern[audio.step % pattern.length] % scale.length];
+    playTone(freq, 0.55, "triangle", 0.09);
+    if (audio.step % 4 === 0) {
+      playTone(freq / 2, 0.7, "sine", 0.06);
+    }
+    audio.step += 1;
+  };
+  playNext();
+  audio.timer = setInterval(playNext, 480);
+}
+
+function stopMusic() {
+  if (audio.timer) {
+    clearInterval(audio.timer);
+    audio.timer = null;
+  }
+}
+
+function playTone(frequency, duration, type, peak) {
+  if (!audio.ctx) {
+    return;
+  }
+  const now = audio.ctx.currentTime;
+  const osc = audio.ctx.createOscillator();
+  const gain = audio.ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = frequency;
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(peak, now + 0.04);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+  osc.connect(gain);
+  gain.connect(audio.master);
+  osc.start(now);
+  osc.stop(now + duration + 0.05);
+}
+
+function playChime(frequency) {
+  if (!state.musicOn) {
+    return;
+  }
+  ensureAudio();
+  playTone(frequency, 0.3, "sine", 0.14);
+}
+
 function findNearestNpc() {
   let nearest = null;
   let bestDistance = Infinity;
@@ -836,6 +1245,13 @@ function findNearestNpc() {
 }
 
 function renderQuestList() {
+  const completedQuests = questDefinitions.filter((quest) =>
+    state.progress[quest.id].every(Boolean)
+  ).length;
+  if (dom.questProgress) {
+    dom.questProgress.textContent = `${completedQuests}/${questDefinitions.length}`;
+  }
+
   dom.questList.innerHTML = "";
   questDefinitions.forEach((quest) => {
     const doneCount = state.progress[quest.id].filter(Boolean).length;

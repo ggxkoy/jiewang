@@ -23,6 +23,26 @@
       </section>
 
       <section id="hud" class="hud is-hidden" aria-label="Game HUD">
+        <div class="status-bar" aria-label="状态">
+          <div class="status-chip" title="已收集金币">
+            <span class="status-icon">★</span>
+            <span id="coin-count">0</span>
+          </div>
+          <div class="status-chip" title="时间">
+            <span id="time-icon" class="status-icon">☀</span>
+            <span id="time-label">白天</span>
+          </div>
+          <div class="status-chip" title="已完成任务">
+            <span class="status-icon">✦</span>
+            <span id="quest-progress">0/0</span>
+          </div>
+        </div>
+
+        <div id="compass" class="compass is-hidden" aria-hidden="true">
+          <div id="compass-arrow" class="compass-arrow">➤</div>
+          <span id="compass-label" class="compass-label"></span>
+        </div>
+
         <aside class="quest-panel" aria-label="任务目标">
           <div class="quest-head">
             <div>
@@ -35,7 +55,8 @@
         </aside>
 
         <div class="action-stack" aria-label="快捷功能">
-          <button id="music-toggle" class="round-button" type="button" title="音乐">♪</button>
+          <button id="music-toggle" class="round-button" type="button" title="音乐：关">♪</button>
+          <button id="time-toggle" class="round-button" type="button" title="切换昼夜">☾</button>
           <button id="outfit-toggle" class="round-button" type="button" title="换装">◐</button>
           <button id="focus-player" class="round-button" type="button" title="回到角色">⌖</button>
         </div>
@@ -51,7 +72,7 @@
           <button id="dialogue-close" type="button">继续</button>
         </section>
 
-        <div class="controls-hint">WASD / 方向键移动 · Shift 奔跑 · Space 跳跃 · E 对话</div>
+        <div class="controls-hint">WASD / 方向键移动 · Shift 奔跑 · Space 跳跃 · E 对话 · 靠近金币自动收集</div>
 
         <div class="touch-pad" aria-label="移动控制">
           <button data-touch-key="up" type="button">↑</button>
