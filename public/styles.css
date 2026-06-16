@@ -1,0 +1,428 @@
+:root {
+  --sky: #73d5e4;
+  --sea: #40bfcf;
+  --cream: #f7f0d8;
+  --ink: #1e2b32;
+  --panel: rgba(249, 244, 222, 0.9);
+  --panel-border: rgba(28, 44, 52, 0.18);
+  --yellow: #ffd341;
+  --yellow-dark: #9b6a00;
+  --green: #4fbd63;
+  --red: #d75d3d;
+  --blue: #2d7ed4;
+  --shadow: 0 16px 40px rgba(29, 62, 76, 0.24);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--sky);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button {
+  font: inherit;
+}
+
+.app,
+#world {
+  position: fixed;
+  inset: 0;
+}
+
+#world {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.is-hidden {
+  display: none !important;
+}
+
+.title-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  place-items: center;
+  padding: 7vh 24px 9vh;
+  pointer-events: none;
+}
+
+.title-copy {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  align-self: center;
+  transform: translateY(-1vh);
+}
+
+.title-kicker {
+  margin: 0;
+  padding: 7px 12px;
+  border: 2px solid rgba(30, 43, 50, 0.2);
+  background: rgba(255, 255, 255, 0.54);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.game-title {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  color: var(--cream);
+  font-size: clamp(72px, 14vw, 190px);
+  line-height: 0.74;
+  font-weight: 950;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow:
+    0 5px 0 #d7ccaa,
+    0 10px 0 #8b7e5e,
+    0 26px 38px rgba(27, 54, 64, 0.38);
+}
+
+.begin-button {
+  pointer-events: auto;
+  min-width: 190px;
+  padding: 16px 34px 18px;
+  border: 4px solid #1d2830;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffe879, var(--yellow));
+  color: #2f2a16;
+  box-shadow:
+    0 8px 0 var(--yellow-dark),
+    0 18px 34px rgba(38, 70, 80, 0.32);
+  cursor: pointer;
+  font-size: 28px;
+  font-weight: 950;
+  text-transform: uppercase;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.begin-button:hover {
+  transform: translateY(-2px);
+}
+
+.begin-button:active {
+  transform: translateY(6px);
+  box-shadow:
+    0 2px 0 var(--yellow-dark),
+    0 10px 20px rgba(38, 70, 80, 0.24);
+}
+
+.hud {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.quest-panel {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  width: min(360px, calc(100vw - 36px));
+  max-height: min(68vh, 610px);
+  overflow: auto;
+  padding: 14px;
+  border: 2px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  backdrop-filter: blur(10px);
+}
+
+.quest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.quest-head p,
+.dialogue-role {
+  margin: 0 0 3px;
+  color: #4a6874;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.quest-head h2,
+.dialogue h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.icon-button,
+.round-button,
+.dialogue button,
+.touch-pad button {
+  border: 2px solid #1d2830;
+  background: #fff7d9;
+  color: var(--ink);
+  box-shadow: 0 4px 0 rgba(29, 40, 48, 0.22);
+  cursor: pointer;
+}
+
+.icon-button {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.quest-list {
+  display: grid;
+  gap: 9px;
+}
+
+.quest-item {
+  padding: 10px;
+  border: 1px solid rgba(30, 43, 50, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.quest-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 7px;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.quest-count {
+  color: #4e737f;
+  font-size: 12px;
+}
+
+.step-list {
+  display: grid;
+  gap: 5px;
+}
+
+.quest-step {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 7px;
+  align-items: start;
+  color: #344c55;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.quest-step span:first-child {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(30, 43, 50, 0.28);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.42);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.quest-step.is-done {
+  color: #237745;
+}
+
+.quest-step.is-current {
+  color: #1d2830;
+  font-weight: 800;
+}
+
+.quest-step.is-done span:first-child {
+  border-color: rgba(31, 126, 70, 0.35);
+  background: #dff7d4;
+}
+
+.action-stack {
+  position: fixed;
+  right: 18px;
+  bottom: 102px;
+  display: grid;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.round-button {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #fff2c7;
+  font-size: 23px;
+  font-weight: 900;
+}
+
+.round-button.is-active {
+  background: var(--yellow);
+}
+
+.interaction-prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 112px;
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  border: 2px solid rgba(30, 43, 50, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 249, 222, 0.92);
+  box-shadow: var(--shadow);
+  font-weight: 900;
+  pointer-events: none;
+}
+
+.dialogue {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  width: min(720px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 16px;
+  align-items: end;
+  padding: 16px;
+  border: 3px solid #1d2830;
+  border-radius: 8px;
+  background: rgba(255, 248, 224, 0.96);
+  box-shadow: 0 18px 50px rgba(27, 60, 70, 0.34);
+  pointer-events: auto;
+}
+
+.dialogue p {
+  margin: 0;
+}
+
+#dialogue-text {
+  grid-column: 1 / -1;
+  color: #344c55;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.dialogue button {
+  min-width: 92px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--yellow);
+  font-weight: 900;
+}
+
+.controls-hint {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(247, 240, 216, 0.82);
+  color: #35545f;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.touch-pad {
+  position: fixed;
+  left: 16px;
+  bottom: 18px;
+  display: none;
+  grid-template-columns: repeat(3, 46px);
+  grid-template-rows: repeat(2, 46px);
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.touch-pad button {
+  border-radius: 10px;
+  background: rgba(255, 247, 217, 0.88);
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.touch-pad [data-touch-key="up"] {
+  grid-column: 2;
+}
+
+.touch-pad [data-touch-key="left"] {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.touch-pad [data-touch-key="down"] {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.touch-pad [data-touch-key="right"] {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.touch-pad [data-touch-key="talk"] {
+  grid-column: 4;
+  grid-row: 2;
+}
+
+@media (max-width: 860px) {
+  .quest-panel {
+    top: 12px;
+    right: 12px;
+    width: min(320px, calc(100vw - 24px));
+    max-height: 46vh;
+  }
+
+  .game-title {
+    font-size: clamp(68px, 26vw, 136px);
+  }
+
+  .controls-hint {
+    display: none;
+  }
+
+  .touch-pad {
+    display: grid;
+  }
+
+  .action-stack {
+    right: 12px;
+    bottom: 86px;
+  }
+
+  .dialogue {
+    bottom: 12px;
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .begin-button,
+  button {
+    transition: none;
+  }
+}

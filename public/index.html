@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Messenger Clone</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main id="app" class="app">
+      <canvas id="world" aria-label="Messenger 3D world"></canvas>
+
+      <section id="title-screen" class="title-screen" aria-label="Messenger title screen">
+        <div class="title-copy">
+          <p class="title-kicker">small planet delivery prototype</p>
+          <h1 class="game-title" aria-label="Messenger">
+            <span>MES</span>
+            <span>SEN</span>
+            <span>GER</span>
+          </h1>
+        </div>
+        <button id="begin-button" class="begin-button" type="button">BEGIN</button>
+      </section>
+
+      <section id="hud" class="hud is-hidden" aria-label="Game HUD">
+        <aside class="quest-panel" aria-label="任务目标">
+          <div class="quest-head">
+            <div>
+              <p>目标</p>
+              <h2>投递清单</h2>
+            </div>
+            <button id="reset-progress" class="icon-button" type="button" title="重置任务">↻</button>
+          </div>
+          <div id="quest-list" class="quest-list"></div>
+        </aside>
+
+        <div class="action-stack" aria-label="快捷功能">
+          <button id="music-toggle" class="round-button" type="button" title="音乐">♪</button>
+          <button id="outfit-toggle" class="round-button" type="button" title="换装">◐</button>
+          <button id="focus-player" class="round-button" type="button" title="回到角色">⌖</button>
+        </div>
+
+        <div id="interaction-prompt" class="interaction-prompt is-hidden"></div>
+
+        <section id="dialogue" class="dialogue is-hidden" aria-live="polite">
+          <div>
+            <p id="dialogue-role" class="dialogue-role"></p>
+            <h2 id="dialogue-name"></h2>
+          </div>
+          <p id="dialogue-text"></p>
+          <button id="dialogue-close" type="button">继续</button>
+        </section>
+
+        <div class="controls-hint">WASD / 方向键移动 · Shift 奔跑 · Space 跳跃 · E 对话</div>
+
+        <div class="touch-pad" aria-label="移动控制">
+          <button data-touch-key="up" type="button">↑</button>
+          <button data-touch-key="left" type="button">←</button>
+          <button data-touch-key="down" type="button">↓</button>
+          <button data-touch-key="right" type="button">→</button>
+          <button data-touch-key="talk" type="button">E</button>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
