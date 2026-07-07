@@ -51,12 +51,39 @@ http://localhost:3000
 - Express
 - Three.js
 
+## Rendering pipeline
+
+The scene renders through a small Ghibli-style toon pipeline so that both the
+built-in primitives and any models you upload share one look:
+
+- `public/shading.js`: converts `MeshStandardMaterial` to `MeshToonMaterial`
+  with a shared gradient ramp, injects a soft fresnel rim light, and builds
+  inverted-hull outlines.
+- `public/postfx.js`: `EffectComposer` chain — render → gentle bloom →
+  tone-mapping/sRGB output. Falls back to a direct render if it fails to init.
+- `public/models.js`: GLTF loading pipeline (DRACO + Meshopt decoders) that
+  auto-applies toon shading, shadows, outlines, surface placement, and
+  animation. Reads `models/manifest.json` on startup.
+
+An import map in `index.html` maps `three` and `three/addons/` to the vendored
+Three.js build, so modules use bare specifiers.
+
+## Uploading models
+
+Drop `.glb`/`.gltf` files into `models/` and register them in
+`models/manifest.json` — no code changes needed. See `models/README.md` for the
+manifest schema. `models/demo-crate.gltf` is a sample that proves the pipeline;
+remove its manifest entry once you add your own.
+
 ## Project files
 
-- `public/index.html`: UI shell
+- `public/index.html`: UI shell and Three.js import map
 - `public/styles.css`: HUD and overlay styles
 - `public/app.js`: world setup, player controls, camera, quests, and NPC logic
-- `server.mjs`: static server and local Three.js module exposure
+- `public/shading.js`: toon material conversion, rim light, and outlines
+- `public/postfx.js`: post-processing (bloom + output) composer
+- `public/models.js`: GLTF model loading and manifest pipeline
+- `server.mjs`: static server, Three.js module exposure, and `/models` route
 
 ## Notes
 

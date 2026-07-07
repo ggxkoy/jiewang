@@ -1,4 +1,7 @@
-import * as THREE from "/vendor/three/build/three.module.js";
+import * as THREE from "three";
+import { convertObjectToToon } from "./shading.js";
+import { createPostPipeline } from "./postfx.js";
+import { createModelPipeline } from "./models.js";
 
 const PLANET_RADIUS = 8;
 const PLAYER_OFFSET = 0.75;
@@ -315,6 +318,20 @@ const audio = {
   step: 0
 };
 
+// Post-processing chain; falls back to a plain renderer.render on failure.
+let post = null;
+try {
+  post = createPostPipeline(renderer, scene, camera);
+} catch (error) {
+  console.warn("后期管线初始化失败，回退到直接渲染。", error);
+}
+
+const models = createModelPipeline({
+  world,
+  placeOnPlanet: (object, normal, offset, forward) =>
+    placeCharacterOnPlanet(object, normal, offset, forward)
+});
+
 init();
 
 function init() {
@@ -330,6 +347,7 @@ function init() {
   createClouds();
   createFlowers();
   createPetals();
+  applyToonShading();
   bindEvents();
   renderQuestList();
   updateCarriedPackage();
@@ -337,6 +355,19 @@ function init() {
   applyDayNight(state.dayTime);
   resize();
   renderer.setAnimationLoop(tick);
+  models.loadManifest();
+}
+
+function applyToonShading() {
+  // Very large surfaces get a fresnel rim across their whole silhouette,
+  // which reads as a glowing edge — skip rim for those.
+  refs.planet.material.userData.noRim = true;
+  refs.sea.material.userData.noRim = true;
+  refs.cloudMaterial.userData.noRim = true;
+  convertObjectToToon(scene);
+  // The cloud material reference is tint-animated by the day/night cycle;
+  // repoint it at the converted instance.
+  refs.cloudMaterial = refs.clouds[0]?.children[0]?.material || refs.cloudMaterial;
 }
 
 function createLights() {
@@ -1085,7 +1116,12 @@ function tick() {
     updateCompass();
   }
   animateWorld(dt);
-  renderer.render(scene, camera);
+  models.update(dt);
+  if (post) {
+    post.render();
+  } else {
+    renderer.render(scene, camera);
+  }
 }
 
 function updateTitleCamera(dt) {
@@ -1695,6 +1731,9 @@ function resize() {
   const width = window.innerWidth;
   const height = window.innerHeight;
   renderer.setSize(width, height, false);
+  if (post) {
+    post.setSize(width, height);
+  }
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   if (state.mode !== "title") {
@@ -1722,6 +1761,12 @@ window.__messengerClone = {
       cameraUpDot: camera.up.dot(state.playerNormal),
       nearNpc: state.nearNpc?.id || null
     };
+  },
+  loadModel(url, options) {
+    return models.loadModel(url, options);
+  },
+  getLoadedModels() {
+    return [...models.loaded.keys()];
   },
   teleportToNpc(id) {
     const npc = npcDefinitions.find((item) => item.id === id);

@@ -7,9 +7,16 @@ const ROOT_DIR = process.cwd();
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 
 app.use("/vendor/three", express.static(path.join(ROOT_DIR, "node_modules", "three")));
+app.use("/models", express.static(path.join(ROOT_DIR, "models")));
 app.use(express.static(PUBLIC_DIR));
 
 app.use((req, res) => {
+  // Asset-like paths that were not matched above should 404 instead of
+  // falling through to index.html, so loaders see real errors.
+  if (path.extname(req.path)) {
+    res.status(404).end();
+    return;
+  }
   res.sendFile(path.join(PUBLIC_DIR, "index.html"));
 });
 
