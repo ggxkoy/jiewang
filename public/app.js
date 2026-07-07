@@ -23,8 +23,11 @@ const FBX_PLANET_URL = "/assets/planet/lod.fbx";
 const FBX_PLANET_TEXTURE = "/assets/planet/texture_diffuse.png";
 const FBX_PLAYER_IDLE_URL = "/assets/player/idle.fbx";
 const FBX_PLAYER_RUN_URL = "/assets/player/run.fbx";
+const FBX_PLAYER_TEXTURE = "/assets/player/texture_diffuse.png";
 const PLAYER_MODEL_SCALE = 0.0035; // native char ~351u tall -> ~1.05u world
-const PLAYER_MODEL_Y = -0.42; // drop feet from group origin down onto the surface
+// Drops the character so its ANIMATED feet rest on the surface. Tuned against
+// the skinned idle pose (not the bind pose, which sits ~0.4u lower).
+const PLAYER_MODEL_Y = -0.83;
 const PLAYER_MODEL_YAW = Math.PI; // face the group's forward (+Z) direction
 
 const skyPalette = {
@@ -419,26 +422,24 @@ async function loadFbxPlayer() {
     character.scale.setScalar(PLAYER_MODEL_SCALE);
     character.position.y = PLAYER_MODEL_Y;
     character.rotation.y = PLAYER_MODEL_YAW;
-    // The character ships without a usable web texture (source is a .psd), so
-    // give it a flat outfit color that the outfit toggle can recolor.
+    // The character's real texture lives in a .psd (converted to
+    // texture_diffuse.png). Apply it as the color map; Maya UVs need
+    // flipY = false to line up.
+    const charTexture = new THREE.TextureLoader().load(FBX_PLAYER_TEXTURE);
+    charTexture.colorSpace = THREE.SRGBColorSpace;
+    charTexture.flipY = false;
     character.traverse((object) => {
       if (object.isMesh) {
         object.castShadow = true;
         object.receiveShadow = true;
         object.material = new THREE.MeshStandardMaterial({
-          color: outfitColors[state.outfitIndex],
-          roughness: 0.75
+          map: charTexture,
+          roughness: 0.8,
+          metalness: 0
         });
       }
     });
     convertObjectToToon(character);
-    // Repoint the outfit-toggle target at the model's mesh so changing outfits
-    // recolors the character (toon conversion keeps a settable color).
-    character.traverse((object) => {
-      if (object.isMesh) {
-        refs.playerBody = object;
-      }
-    });
 
     // Hide the placeholder capsule/head/backpack but keep the carried parcel.
     refs.player.children.forEach((child) => {
@@ -453,11 +454,15 @@ async function loadFbxPlayer() {
     playerAnim.mixer = mixer;
     if (idle.animations[0]) {
       playerAnim.idle = mixer.clipAction(idle.animations[0]);
+      playerAnim.idle.setLoop(THREE.LoopRepeat, Infinity);
+      playerAnim.idle.clampWhenFinished = false;
       playerAnim.idle.play();
       playerAnim.current = playerAnim.idle;
     }
     if (run.animations[0]) {
       playerAnim.run = mixer.clipAction(run.animations[0]);
+      playerAnim.run.setLoop(THREE.LoopRepeat, Infinity);
+      playerAnim.run.clampWhenFinished = false;
       playerAnim.run.play();
       playerAnim.run.setEffectiveWeight(0);
     }
@@ -1887,6 +1892,29 @@ function getNpcMarker(npc) {
   return isNpcCurrentObjective(npc) ? "!" : "•";
 }
 
+function bindingStats(clip, mesh) {
+  if (!clip || !mesh) {
+    return null;
+  }
+  const boneSet = new Set(mesh.skeleton.bones.map((b) => b.name));
+  let matched = 0;
+  const misses = new Set();
+  clip.tracks.forEach((track) => {
+    const node = track.name.split(".")[0];
+    if (boneSet.has(node)) {
+      matched += 1;
+    } else {
+      misses.add(node);
+    }
+  });
+  return {
+    total: clip.tracks.length,
+    matched,
+    unmatched: clip.tracks.length - matched,
+    sampleMisses: [...misses].slice(0, 6)
+  };
+}
+
 window.__messengerClone = {
   getState() {
     return {
@@ -1905,6 +1933,83 @@ window.__messengerClone = {
   },
   getLoadedModels() {
     return [...models.loaded.keys()];
+  },
+  // Samples the ACTUAL skinned (animated) vertices to find the character's
+  // real feet/head distance from the planet centre, plus a bone quaternion so
+  // callers can confirm the animation is advancing and looping.
+  debugSkin() {
+    let mesh = null;
+    refs.playerModel?.traverse((o) => {
+      if (o.isSkinnedMesh) {
+        mesh = o;
+      }
+    });
+    if (!mesh) {
+      return null;
+    }
+    mesh.updateMatrixWorld(true);
+    const pos = mesh.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    let minR = Infinity;
+    let maxR = -Infinity;
+    const step = Math.max(1, Math.floor(pos.count / 400));
+    for (let i = 0; i < pos.count; i += step) {
+      mesh.getVertexPosition(i, v); // applies skinning
+      mesh.localToWorld(v);
+      const r = v.length();
+      if (r < minR) minR = r;
+      if (r > maxR) maxR = r;
+    }
+    const bone = mesh.skeleton.bones[5];
+    return {
+      feetRadius: +minR.toFixed(3),
+      headRadius: +maxR.toFixed(3),
+      worldHeight: +(maxR - minR).toFixed(3),
+      surfaceRadius: PLANET_RADIUS,
+      boneQuat: bone ? bone.quaternion.toArray().map((n) => +n.toFixed(4)) : null
+    };
+  },
+  // Diagnoses the player animation: whether mixer/action time advances and
+  // whether clip track names resolve to real bones.
+  animDebug() {
+    if (!playerAnim.mixer) {
+      return { error: "no mixer" };
+    }
+    let mesh = null;
+    refs.playerModel?.traverse((o) => {
+      if (o.isSkinnedMesh) {
+        mesh = o;
+      }
+    });
+    const idleClip = playerAnim.idle?.getClip();
+    const runClip = playerAnim.run?.getClip();
+    const boneNames = mesh ? mesh.skeleton.bones.slice(0, 6).map((b) => b.name) : [];
+    const trackNames = idleClip ? idleClip.tracks.slice(0, 6).map((t) => t.name) : [];
+    return {
+      mixerTime: +playerAnim.mixer.time.toFixed(3),
+      idle: playerAnim.idle
+        ? {
+            time: +playerAnim.idle.time.toFixed(3),
+            weight: +playerAnim.idle.getEffectiveWeight().toFixed(3),
+            running: playerAnim.idle.isRunning(),
+            enabled: playerAnim.idle.enabled,
+            paused: playerAnim.idle.paused,
+            loop: playerAnim.idle.loop,
+            clipDur: +idleClip.duration.toFixed(3)
+          }
+        : null,
+      run: playerAnim.run
+        ? {
+            time: +playerAnim.run.time.toFixed(3),
+            weight: +playerAnim.run.getEffectiveWeight().toFixed(3),
+            running: playerAnim.run.isRunning(),
+            clipDur: +runClip.duration.toFixed(3)
+          }
+        : null,
+      boneNames,
+      trackNames,
+      binding: bindingStats(idleClip, mesh)
+    };
   },
   // Reports the character's world height and how far its feet sit from the
   // planet centre versus the surface radius (for tuning placement).
