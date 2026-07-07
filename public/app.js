@@ -28,7 +28,14 @@ const PLAYER_MODEL_SCALE = 0.0035; // native char ~351u tall -> ~1.05u world
 // Drops the character so its ANIMATED feet rest on the surface. Tuned against
 // the skinned idle pose (not the bind pose, which sits ~0.4u lower).
 const PLAYER_MODEL_Y = -0.83;
-const PLAYER_MODEL_YAW = Math.PI; // face the group's forward (+Z) direction
+// The character model's face points down local -X; the movement code aligns the
+// group's +Z to the travel direction, so rotate -90° to make the face lead.
+const PLAYER_MODEL_YAW = -Math.PI / 2;
+// The run FBX carries a stray camera track that stretches the clip to 2.67s,
+// freezing the character after its real ~0.33s cycle. Trim to the actual run
+// loop (6 frames at 30fps) so it cycles continuously.
+const ANIM_FPS = 30;
+const RUN_LOOP_FRAMES = 6;
 
 const skyPalette = {
   day: {
@@ -460,7 +467,12 @@ async function loadFbxPlayer() {
       playerAnim.current = playerAnim.idle;
     }
     if (run.animations[0]) {
-      playerAnim.run = mixer.clipAction(run.animations[0]);
+      // Shorten the clip to the real run cycle (6 frames). The stray camera
+      // track keeps its far keyframes, but the mixer now loops at this
+      // duration, so the character cycles instead of freezing at the tail.
+      const runClip = run.animations[0];
+      runClip.duration = RUN_LOOP_FRAMES / ANIM_FPS;
+      playerAnim.run = mixer.clipAction(runClip);
       playerAnim.run.setLoop(THREE.LoopRepeat, Infinity);
       playerAnim.run.clampWhenFinished = false;
       playerAnim.run.play();
