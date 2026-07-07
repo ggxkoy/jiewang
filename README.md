@@ -71,9 +71,29 @@ Three.js build, so modules use bare specifiers.
 ## Uploading models
 
 Drop `.glb`/`.gltf` files into `models/` and register them in
-`models/manifest.json` — no code changes needed. See `models/README.md` for the
-manifest schema. `models/demo-crate.gltf` is a sample that proves the pipeline;
-remove its manifest entry once you add your own.
+`models/manifest.json` — no code changes needed. The loader also supports
+`.fbx` (via `FBXLoader`). See `models/README.md` for the manifest schema.
+`models/demo-crate.gltf` is a sample that proves the pipeline; remove its
+manifest entry once you add your own.
+
+## Real FBX assets (planet + character)
+
+The uploaded FBX planet and character in `public/assets/` replace the
+placeholder sphere and capsule when `USE_FBX_ASSETS` is on (top of
+`public/app.js`):
+
+- The **planet** (`assets/planet/lod.fbx` + `texture_diffuse.png`) is scaled to
+  fit the fixed `PLANET_RADIUS` sphere the movement math relies on, then
+  centered on the origin. Its houses and greenery replace the primitive
+  scenery, which is hidden.
+- The **character** (`assets/player/idle.fbx` + `run.fbx`) is huge at native
+  scale (~351 units tall — nearly twice the planet's diameter), so it is scaled
+  down to a human proportion (`PLAYER_MODEL_SCALE = 0.0035`, ≈1 unit tall) so it
+  can walk up to and enter the houses. `PLAYER_MODEL_Y` drops the feet onto the
+  surface; idle/run animations cross-fade based on movement.
+
+Tune these live in the console: `__messengerClone.setPlayerModel({ scale, y })`
+and inspect placement with `__messengerClone.debugPlayer()`.
 
 ## Project files
 

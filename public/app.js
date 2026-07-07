@@ -14,6 +14,19 @@ const COIN_COUNT = 14;
 const COIN_PICKUP_DISTANCE = 1.1;
 const DAY_LENGTH = 90; // seconds for a full day/night cycle
 
+// Real uploaded FBX assets (planet + character) replace the placeholder
+// geometry when true. The planet is scaled to fit the fixed PLANET_RADIUS
+// sphere the movement math relies on; the character is scaled down to a human
+// proportion so it can walk up to and enter the houses on the planet.
+const USE_FBX_ASSETS = true;
+const FBX_PLANET_URL = "/assets/planet/lod.fbx";
+const FBX_PLANET_TEXTURE = "/assets/planet/texture_diffuse.png";
+const FBX_PLAYER_IDLE_URL = "/assets/player/idle.fbx";
+const FBX_PLAYER_RUN_URL = "/assets/player/run.fbx";
+const PLAYER_MODEL_SCALE = 0.0035; // native char ~351u tall -> ~1.05u world
+const PLAYER_MODEL_Y = -0.42; // drop feet from group origin down onto the surface
+const PLAYER_MODEL_YAW = Math.PI; // face the group's forward (+Z) direction
+
 const skyPalette = {
   day: {
     zenith: new THREE.Color("#7ec8ee"),
@@ -299,10 +312,21 @@ const refs = {
   cloudMaterial: null,
   petals: null,
   seaRings: [],
+  proceduralScenery: [],
+  fbxPlanet: null,
+  playerModel: null,
   npcMeshes: new Map(),
   npcLabels: new Map(),
   questSprites: new Map(),
   coins: []
+};
+
+// Player character idle/run animation blend.
+const playerAnim = {
+  mixer: null,
+  idle: null,
+  run: null,
+  current: null
 };
 
 const skyBackdrop = {
@@ -356,6 +380,111 @@ function init() {
   resize();
   renderer.setAnimationLoop(tick);
   models.loadManifest();
+  if (USE_FBX_ASSETS) {
+    loadFbxWorld();
+    loadFbxPlayer();
+  }
+}
+
+// Swaps the placeholder sphere for the uploaded FBX planet. The planet is
+// scaled to the fixed PLANET_RADIUS sphere so all movement/camera/NPC math
+// keeps working; the primitive scenery (planet, disks, trees, buildings,
+// flowers) is hidden since the model carries its own houses and greenery.
+async function loadFbxWorld() {
+  try {
+    const record = await models.loadModel(FBX_PLANET_URL, {
+      id: "planet",
+      map: FBX_PLANET_TEXTURE,
+      scaleToRadius: PLANET_RADIUS,
+      animate: false
+    });
+    refs.fbxPlanet = record.root;
+    refs.proceduralScenery.forEach((object) => {
+      object.visible = false;
+    });
+  } catch (error) {
+    console.warn("星球模型加载失败，保留占位球体。", error);
+  }
+}
+
+// Replaces the placeholder capsule with the uploaded character, scaled down to
+// a human proportion relative to the houses, blending idle/run by movement.
+async function loadFbxPlayer() {
+  try {
+    const [idle, run] = await Promise.all([
+      models.loadRaw(FBX_PLAYER_IDLE_URL),
+      models.loadRaw(FBX_PLAYER_RUN_URL)
+    ]);
+    const character = idle.root;
+    character.scale.setScalar(PLAYER_MODEL_SCALE);
+    character.position.y = PLAYER_MODEL_Y;
+    character.rotation.y = PLAYER_MODEL_YAW;
+    // The character ships without a usable web texture (source is a .psd), so
+    // give it a flat outfit color that the outfit toggle can recolor.
+    character.traverse((object) => {
+      if (object.isMesh) {
+        object.castShadow = true;
+        object.receiveShadow = true;
+        object.material = new THREE.MeshStandardMaterial({
+          color: outfitColors[state.outfitIndex],
+          roughness: 0.75
+        });
+      }
+    });
+    convertObjectToToon(character);
+    // Repoint the outfit-toggle target at the model's mesh so changing outfits
+    // recolors the character (toon conversion keeps a settable color).
+    character.traverse((object) => {
+      if (object.isMesh) {
+        refs.playerBody = object;
+      }
+    });
+
+    // Hide the placeholder capsule/head/backpack but keep the carried parcel.
+    refs.player.children.forEach((child) => {
+      if (child !== refs.carriedPackage) {
+        child.visible = false;
+      }
+    });
+    refs.player.add(character);
+    refs.playerModel = character;
+
+    const mixer = new THREE.AnimationMixer(character);
+    playerAnim.mixer = mixer;
+    if (idle.animations[0]) {
+      playerAnim.idle = mixer.clipAction(idle.animations[0]);
+      playerAnim.idle.play();
+      playerAnim.current = playerAnim.idle;
+    }
+    if (run.animations[0]) {
+      playerAnim.run = mixer.clipAction(run.animations[0]);
+      playerAnim.run.play();
+      playerAnim.run.setEffectiveWeight(0);
+    }
+    models.registerMixer(mixer);
+  } catch (error) {
+    console.warn("角色模型加载失败，保留占位角色。", error);
+  }
+}
+
+// Crossfades the player between idle and run based on whether they are moving.
+function setPlayerMoving(moving) {
+  if (!playerAnim.mixer) {
+    return;
+  }
+  const target = moving && playerAnim.run ? playerAnim.run : playerAnim.idle;
+  if (!target || target === playerAnim.current) {
+    return;
+  }
+  if (playerAnim.current) {
+    playerAnim.current.enabled = true;
+    target.enabled = true;
+    target.setEffectiveWeight(1);
+    playerAnim.current.crossFadeTo(target, 0.22, false);
+  } else {
+    target.setEffectiveWeight(1);
+  }
+  playerAnim.current = target;
 }
 
 function applyToonShading() {
@@ -502,6 +631,7 @@ function createPlanet() {
   planet.castShadow = true;
   planet.receiveShadow = true;
   refs.planet = planet;
+  refs.proceduralScenery.push(planet);
   world.add(planet);
 
   addSurfaceDisk([0.2, 1, 0.2], 2.0, "#7ad46f");
@@ -527,6 +657,7 @@ function addSurfaceDisk(position, radius, color) {
   disk.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
   disk.receiveShadow = true;
   world.add(disk);
+  refs.proceduralScenery.push(disk);
   return disk;
 }
 
@@ -723,6 +854,7 @@ function createFlowers() {
       flower.add(head);
       placeCharacterOnPlanet(flower, normal, 0.01);
       world.add(flower);
+      refs.proceduralScenery.push(flower);
     }
   }
 }
@@ -882,6 +1014,7 @@ function createProps() {
     building.add(roof);
     placeCharacterOnPlanet(building, normal, 0.02);
     world.add(building);
+    refs.proceduralScenery.push(building);
   });
 
   const treePositions = [
@@ -940,6 +1073,7 @@ function createTree(normal) {
   placeCharacterOnPlanet(tree, normal, 0.02);
   tree.rotateY(Math.random() * Math.PI * 2);
   world.add(tree);
+  refs.proceduralScenery.push(tree);
 }
 
 function bindEvents() {
@@ -1146,12 +1280,14 @@ function updatePlayer(dt) {
   if (input.right) move.add(cameraRight);
   if (input.left) move.sub(cameraRight);
 
-  if (move.lengthSq() > 0.0001 && !state.dialogueOpen) {
+  const moving = move.lengthSq() > 0.0001 && !state.dialogueOpen;
+  if (moving) {
     move.normalize();
     const speed = input.sprint ? 4.2 : 2.8;
     normal.addScaledVector(move, (speed * dt) / PLANET_RADIUS).normalize();
     state.playerForward.copy(projectDirectionOnTangent(move, normal, state.playerForward));
   }
+  setPlayerMoving(moving);
 
   if (state.jumpVelocity !== 0 || state.jumpHeight > 0) {
     state.jumpVelocity -= 12 * dt;
@@ -1441,7 +1577,9 @@ function updateCarriedPackage() {
   });
   state.carryingPackage = carrying;
   if (refs.carriedPackage) {
-    refs.carriedPackage.visible = carrying;
+    // The FBX messenger already wears a satchel, so suppress the placeholder
+    // parcel cube to avoid a second bag floating by the character.
+    refs.carriedPackage.visible = carrying && !refs.playerModel;
   }
 }
 
@@ -1767,6 +1905,43 @@ window.__messengerClone = {
   },
   getLoadedModels() {
     return [...models.loaded.keys()];
+  },
+  // Reports the character's world height and how far its feet sit from the
+  // planet centre versus the surface radius (for tuning placement).
+  debugPlayer() {
+    if (!refs.playerModel) {
+      return null;
+    }
+    const box = new THREE.Box3().setFromObject(refs.playerModel);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const corners = [
+      new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+      new THREE.Vector3(box.max.x, box.min.y, box.max.z)
+    ];
+    const feetRadius = Math.min(...corners.map((c) => c.length()));
+    return {
+      charHeight: +size.y.toFixed(3),
+      feetRadius: +feetRadius.toFixed(3),
+      surfaceRadius: PLANET_RADIUS,
+      planetVerticalRadius: models.loaded.get("planet")?.verticalRadius ?? null
+    };
+  },
+  // Live tuning of the character model scale / feet offset for fitting houses.
+  setPlayerModel({ scale, y, yaw } = {}) {
+    if (!refs.playerModel) {
+      return null;
+    }
+    if (typeof scale === "number") {
+      refs.playerModel.scale.setScalar(scale);
+    }
+    if (typeof y === "number") {
+      refs.playerModel.position.y = y;
+    }
+    if (typeof yaw === "number") {
+      refs.playerModel.rotation.y = yaw;
+    }
+    return refs.playerModel.scale.x;
   },
   teleportToNpc(id) {
     const npc = npcDefinitions.find((item) => item.id === id);
